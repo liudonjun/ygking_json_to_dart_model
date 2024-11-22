@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:ygking_to_model/pages/cupertino_icons_page.dart';
+import 'package:ygking_to_model/pages/material_icons_page.dart';
 import 'package:ygking_to_model/services/json_converter.dart';
 
 class HomePage extends StatefulWidget {
@@ -146,6 +148,30 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('JSON 转 Dart Model'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.grid_view),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const MaterialIconsPage()),
+              );
+            },
+            tooltip: 'Material Icons',
+          ),
+          IconButton(
+            icon: const Icon(Icons.apple),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const CupertinoIconsPage()),
+              );
+            },
+            tooltip: 'Cupertino Icons',
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
