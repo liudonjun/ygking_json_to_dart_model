@@ -1,92 +1,120 @@
 import 'dart:convert';
 
 class JsonConverter {
-  final Set<String> _generatedClasses = {};
-  final StringBuffer _allClasses = StringBuffer();
-
-  String convertJsonToDart(String jsonString, String className) {
+  String convertJsonToDart(String jsonStr, String className) {
     try {
-      _generatedClasses.clear();
-      _allClasses.clear();
+      final dynamic jsonData = json.decode(jsonStr);
+      final StringBuffer buffer = StringBuffer();
 
-      // 解析JSON字符串
-      final Map<String, dynamic> jsonMap = json.decode(jsonString);
+      if (jsonData is Map<String, dynamic>) {
+        _generateClass(jsonData, className, buffer, className);
+      } else if (jsonData is List &&
+          jsonData.isNotEmpty &&
+          jsonData[0] is Map<String, dynamic>) {
+        // 如果是数组，使用第一个元素作为模板
+        _generateClass(jsonData[0], className, buffer, className);
+      } else {
+        return '// 错误: JSON格式无效\n// 输入必须是对象或对象数组';
+      }
 
-      // 生成主类和所有嵌套类
-      _generateClass(jsonMap, className);
-
-      return _allClasses.toString();
+      return buffer.toString();
     } catch (e) {
-      return '转换错误: $e\n\n请确保输入的是有效的JSON格式。\n例如：\n{\n  "id": 1,\n  "name": "测试"\n}';
+      return '// 错误: JSON格式无效\n// $e';
     }
   }
 
-  void _generateClass(Map<String, dynamic> jsonMap, String className) {
-    if (_generatedClasses.contains(className)) return;
-    _generatedClasses.add(className);
+  void _generateClass(
+    Map<String, dynamic> map,
+    String className,
+    StringBuffer buffer,
+    String parentClassName,
+  ) {
+    // 生成类声明
+    buffer.writeln('class $className {');
 
-    final StringBuffer fields = StringBuffer();
-    final StringBuffer constructor = StringBuffer();
-    final StringBuffer fromJson = StringBuffer();
-    final StringBuffer toJson = StringBuffer();
+    // 生成字段声明
+    map.forEach((key, value) {
+      final type = _getFieldType(value, key);
+      buffer.writeln('  $type? $key;');
+    });
+    buffer.writeln();
 
-    jsonMap.forEach((key, value) {
-      String type = _getFieldType(value, key);
+    // 生成构造函数
+    buffer.writeln('  $className({');
+    map.forEach((key, _) {
+      buffer.writeln('    this.$key,');
+    });
+    buffer.writeln('  });');
+    buffer.writeln();
 
-      // 如果是对象，生成新的类
-      if (value is Map) {
-        String subClassName = '${key.capitalize()}';
-        _generateClass(value as Map<String, dynamic>, subClassName);
-        type = subClassName;
-      }
-
-      // 添加字段定义
-      fields.writeln('  $type? $key;');
-
-      // 添加构造函数参数
-      if (constructor.isEmpty) {
-        constructor.write('this.$key');
+    // 生成 fromJson
+    buffer.writeln('  $className.fromJson(Map<String, dynamic> json) {');
+    map.forEach((key, value) {
+      if (value is List && value.isNotEmpty && value[0] is Map) {
+        // 处理对象数组
+        buffer.writeln('''    if (json['$key'] != null) {
+      $key = <${key.capitalize()}>[];
+      json['$key'].forEach((v) {
+        $key!.add(${key.capitalize()}.fromJson(v));
+      });
+    }''');
+      } else if (value is Map) {
+        // 处理嵌套对象
+        buffer.writeln('''    if (json['$key'] != null) {
+      $key = ${key.capitalize()}.fromJson(json['$key']);
+    }''');
       } else {
-        constructor.write(', this.$key');
-      }
-
-      // 添加fromJson转换
-      if (value is Map) {
-        String subClassName = '${className}${key.capitalize()}';
-        fromJson.writeln(
-            '    $key = json[\'$key\'] != null ? $subClassName.fromJson(json[\'$key\']) : null;');
-      } else {
-        fromJson.writeln('    $key = json[\'$key\'];');
-      }
-
-      // 添加toJson转换
-      if (value is Map) {
-        toJson.writeln('    if ($key != null) {');
-        toJson.writeln('      data[\'$key\'] = $key!.toJson();');
-        toJson.writeln('    }');
-      } else {
-        toJson.writeln('    data[\'$key\'] = $key;');
+        buffer.writeln('    $key = json[\'$key\'];');
       }
     });
+    buffer.writeln('  }');
+    buffer.writeln();
 
-    // 生成类定义
-    _allClasses.write('''
-class $className {
-$fields
-  $className({$constructor});
+    // 生成 toJson
+    buffer.writeln('  Map<String, dynamic> toJson() {');
+    buffer
+        .writeln('    final Map<String, dynamic> data = <String, dynamic>{};');
+    map.forEach((key, value) {
+      if (value is List && value.isNotEmpty && value[0] is Map) {
+        // 处理对象数组
+        buffer.writeln('''    if ($key != null) {
+      data['$key'] = $key!.map((v) => v.toJson()).toList();
+    }''');
+      } else if (value is Map) {
+        // 处理嵌套对象
+        buffer.writeln('''    if ($key != null) {
+      data['$key'] = $key!.toJson();
+    }''');
+      } else {
+        buffer.writeln('    data[\'$key\'] = $key;');
+      }
+    });
+    buffer.writeln('    return data;');
+    buffer.writeln('  }');
 
-  $className.fromJson(Map<String, dynamic> json) {
-$fromJson
-  }
+    buffer.writeln('}');
+    buffer.writeln();
 
-  Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
-$toJson
-    return data;
-  }
-}
-
-''');
+    // 生成嵌套类
+    map.forEach((key, value) {
+      if (value is Map<String, dynamic>) {
+        _generateClass(
+          value,
+          key.capitalize(),
+          buffer,
+          className,
+        );
+      } else if (value is List &&
+          value.isNotEmpty &&
+          value[0] is Map<String, dynamic>) {
+        _generateClass(
+          value[0] as Map<String, dynamic>,
+          key.capitalize(),
+          buffer,
+          className,
+        );
+      }
+    });
   }
 
   String _getFieldType(dynamic value, String key) {
@@ -95,15 +123,15 @@ $toJson
     if (value is double) return 'double';
     if (value is bool) return 'bool';
     if (value is String) return 'String';
-    if (value is List) return 'List<${_getListType(value)}>';
-    if (value is Map) return '${key.capitalize()}';
+    if (value is List) {
+      if (value.isEmpty) return 'List<dynamic>';
+      if (value[0] is Map) {
+        return 'List<${key.capitalize()}>';
+      }
+      return 'List<${_getFieldType(value[0], key)}>';
+    }
+    if (value is Map) return key.capitalize();
     return 'dynamic';
-  }
-
-  String _getListType(List list) {
-    if (list.isEmpty) return 'dynamic';
-    var firstItem = list[0];
-    return _getFieldType(firstItem, '');
   }
 }
 
